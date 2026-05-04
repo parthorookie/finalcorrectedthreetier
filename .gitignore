@@ -1,0 +1,12 @@
+node_modules/
+coverage/
+dist/
+.env
+.env.*
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+*.tar
+*.log
+.DS_Store

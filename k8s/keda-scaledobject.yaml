@@ -1,0 +1,52 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-scaler
+  namespace: worker
+  labels:
+    app: worker
+    managed-by: keda
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: worker
+
+  pollingInterval:  10   # Check queue every 10 seconds
+  cooldownPeriod:   60   # Wait 60s before scaling down
+  minReplicaCount:  1    # Always keep 1 worker alive (0 = scale to zero)
+  maxReplicaCount:  20   # Max burst
+
+  triggers:
+    # Scale on main orders queue depth
+    - type: rabbitmq
+      metadata:
+        protocol:    amqp
+        queueName:   orders
+        mode:        QueueLength
+        value:       "5"         # 1 replica per 5 pending messages
+      authenticationRef:
+        name: rabbitmq-trigger-auth
+
+    # Also scale on DLQ depth (when Argo is reprocessing)
+    - type: rabbitmq
+      metadata:
+        protocol:    amqp
+        queueName:   orders.dlq
+        mode:        QueueLength
+        value:       "10"
+      authenticationRef:
+        name: rabbitmq-trigger-auth
+
+---
+# TriggerAuthentication — stores RabbitMQ connection string
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: rabbitmq-trigger-auth
+  namespace: worker
+spec:
+  secretTargetRef:
+    - parameter: host
+      name:      rabbitmq-secret
+      key:       rabbit-url

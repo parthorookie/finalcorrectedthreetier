@@ -1,0 +1,18 @@
+replicaCount: 2
+
+frontend:
+  image:
+    repository: "YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/frontend"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+backend:
+  image:
+    repository: "YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/backend"
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  env:
+    NODE_ENV: production
+    DB_NAME: ecommerce
+    DB_USER: postgres

@@ -1,0 +1,22 @@
+{
+  "name": "ecommerce-worker",
+  "version": "1.0.0",
+  "description": "RabbitMQ Order Consumer Worker",
+  "main": "worker.js",
+  "scripts": {
+    "start": "node worker.js",
+    "dev": "nodemon worker.js",
+    "test": "jest --runInBand --forceExit"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.4",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2"
+  },
+  "jest": {
+    "testEnvironment": "node"
+  }
+}

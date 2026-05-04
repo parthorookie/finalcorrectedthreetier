@@ -1,0 +1,12 @@
+replicaCount: 2
+
+image:
+  repository: "YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/worker"
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+env:
+  NODE_ENV: production
+  MAX_RETRIES: "3"
+  DB_NAME: ecommerce
+  DB_USER: postgres

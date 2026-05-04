@@ -1,0 +1,53 @@
+groups:
+  - name: rabbitmq_alerts
+    rules:
+
+      # DLQ has any messages → page immediately
+      - alert: DLQNotEmpty
+        expr: rabbitmq_queue_messages{queue="orders.dlq"} > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DLQ has unprocessed messages"
+          description: "orders.dlq has {{ $value }} messages — Argo CronWorkflow should reprocess"
+
+      # Main queue backed up
+      - alert: OrderQueueBacklog
+        expr: rabbitmq_queue_messages{queue="orders"} > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Order queue backlog growing"
+          description: "orders queue has {{ $value }} messages — consider scaling workers"
+
+      # Parking lot has messages → human review needed
+      - alert: ParkingLotNotEmpty
+        expr: rabbitmq_queue_messages{queue="orders.parking-lot"} > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Poison messages in parking lot"
+          description: "{{ $value }} messages need manual review in orders.parking-lot"
+
+      # RabbitMQ node down
+      - alert: RabbitMQNodeDown
+        expr: up{job="rabbitmq"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ node is down"
+          description: "RabbitMQ has been unreachable for 30s"
+
+      # Consumer count drops to 0 (worker crashed)
+      - alert: NoActiveConsumers
+        expr: rabbitmq_queue_consumers{queue="orders"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No active consumers on orders queue"
+          description: "Worker pods may be down — KEDA should scale up"

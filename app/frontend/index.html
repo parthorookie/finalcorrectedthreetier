@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pixel Store</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+    :root {
+      --bg:        #0a0a0f;
+      --bg2:       #111118;
+      --surface:   #1a1a24;
+      --border:    #2a2a38;
+      --accent:    #4f8ef7;
+      --accent2:   #7c5fe6;
+      --success:   #22c55e;
+      --warning:   #f59e0b;
+      --text:      #e8e8f0;
+      --muted:     #6b6b80;
+      --card-r:    16px;
+      --transition: 0.2s cubic-bezier(.4,0,.2,1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── NAV ── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+
+    .logo {
+      font-size: 1.4rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-right {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .cart-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.5rem 1.2rem;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.9rem;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .cart-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+
+    .cart-count {
+      background: #fff;
+      color: var(--accent);
+      border-radius: 50%;
+      width: 1.2rem;
+      height: 1.2rem;
+      font-size: 0.7rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      text-align: center;
+      padding: 4rem 2rem 3rem;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, #1a2050 0%, transparent 70%);
+    }
+
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.1;
+      margin-bottom: 0.75rem;
+    }
+
+    .hero p {
+      color: var(--muted);
+      font-size: 1.1rem;
+      max-width: 480px;
+      margin: 0 auto 2rem;
+    }
+
+    /* ── PRODUCTS GRID ── */
+    .section-title {
+      padding: 0 2rem 1rem;
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .products-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+      padding: 0 2rem 3rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .product-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--card-r);
+      overflow: hidden;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .product-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(79, 142, 247, 0.15);
+    }
+
+    .product-image {
+      aspect-ratio: 4/3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4rem;
+      background: linear-gradient(135deg, #1e1e2e, #2a2a3e);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .product-info {
+      padding: 1.25rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .product-name {
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 0.3rem;
+    }
+
+    .product-desc {
+      color: var(--muted);
+      font-size: 0.85rem;
+      flex: 1;
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    .product-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .product-price {
+      font-size: 1.3rem;
+      font-weight: 700;
+      font-family: 'DM Mono', monospace;
+      color: var(--accent);
+    }
+
+    .add-btn {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      border-radius: 8px;
+      padding: 0.4rem 0.9rem;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.85rem;
+      transition: var(--transition);
+    }
+
+    .add-btn:hover {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    /* ── CART SIDEBAR ── */
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 200;
+      display: none;
+      backdrop-filter: blur(4px);
+    }
+
+    .overlay.open { display: block; }
+
+    .cart-sidebar {
+      position: fixed;
+      top: 0; right: 0;
+      width: 400px;
+      max-width: 100vw;
+      height: 100vh;
+      background: var(--bg2);
+      border-left: 1px solid var(--border);
+      z-index: 300;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cart-sidebar.open { transform: translateX(0); }
+
+    .cart-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .cart-header h2 { font-size: 1.2rem; font-weight: 600; }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.3rem;
+      padding: 0.25rem;
+      line-height: 1;
+    }
+
+    .close-btn:hover { color: var(--text); }
+
+    .cart-items {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+    }
+
+    .cart-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem;
+      background: var(--surface);
+      border-radius: 10px;
+      margin-bottom: 0.6rem;
+    }
+
+    .cart-item-emoji { font-size: 2rem; }
+
+    .cart-item-info { flex: 1; }
+    .cart-item-name { font-weight: 500; font-size: 0.9rem; }
+    .cart-item-price { color: var(--muted); font-size: 0.8rem; font-family: 'DM Mono', monospace; }
+
+    .qty-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .qty-btn {
+      background: var(--border);
+      border: none;
+      color: var(--text);
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--transition);
+    }
+
+    .qty-btn:hover { background: var(--accent); }
+
+    .qty-num { font-family: 'DM Mono', monospace; font-size: 0.9rem; width: 24px; text-align: center; }
+
+    .cart-footer {
+      padding: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .cart-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+    }
+
+    .cart-total span:last-child {
+      font-weight: 700;
+      font-family: 'DM Mono', monospace;
+      color: var(--accent);
+    }
+
+    .checkout-btn {
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0.875rem;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .checkout-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    .checkout-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    /* ── TOAST / STATUS ── */
+    .toast-container {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.875rem 1.25rem;
+      font-size: 0.9rem;
+      max-width: 340px;
+      animation: slideIn 0.3s ease forwards;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .toast.success { border-color: var(--success); }
+    .toast.error   { border-color: #ef4444; }
+    .toast.info    { border-color: var(--accent); }
+
+    .toast-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 0.05rem; }
+    .toast-body { flex: 1; }
+    .toast-title { font-weight: 600; margin-bottom: 0.2rem; }
+    .toast-msg { color: var(--muted); font-size: 0.82rem; font-family: 'DM Mono', monospace; }
+
+    @keyframes slideIn {
+      from { transform: translateX(120%); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+
+    /* ── ORDERS PANEL ── */
+    .orders-section {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+
+    .orders-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    .orders-table th {
+      text-align: left;
+      padding: 0.75rem 1rem;
+      color: var(--muted);
+      font-weight: 500;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .orders-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-family: 'DM Mono', monospace;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .status-pending   { background: rgba(245,158,11,0.15); color: var(--warning); }
+    .status-confirmed { background: rgba(34,197,94,0.15);  color: var(--success); }
+    .status-failed    { background: rgba(239,68,68,0.15);   color: #ef4444; }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--muted);
+    }
+
+    .tab-bar {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0 2rem 1.5rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .tab {
+      padding: 0.5rem 1.25rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 500;
+      font-size: 0.9rem;
+      transition: var(--transition);
+    }
+
+    .tab.active, .tab:hover {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ── LOADING ── */
+    .loader {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-row td {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav>
+  <span class="logo">⬡ Pixel Store</span>
+  <div class="nav-right">
+    <span style="color:var(--muted);font-size:.85rem" id="api-status">⬤ connecting…</span>
+    <button class="cart-btn" onclick="openCart()">
+      🛒 Cart <span class="cart-count" id="cart-count">0</span>
+    </button>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>Shop our featured<br>collection.</h1>
+  <p>Premium Google hardware, shipped with lightning speed.</p>
+</div>
+
+<!-- TABS -->
+<div class="tab-bar">
+  <button class="tab active" onclick="switchTab('shop', this)">Shop</button>
+  <button class="tab" onclick="switchTab('orders', this)">My Orders</button>
+</div>
+
+<!-- SHOP TAB -->
+<div class="tab-content active" id="tab-shop">
+  <p class="section-title">Featured Products</p>
+  <div class="products-grid" id="products-grid">
+    <div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--muted)">
+      <div class="loader"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ORDERS TAB -->
+<div class="tab-content" id="tab-orders">
+  <div class="orders-section">
+    <table class="orders-table" id="orders-table">
+      <thead>
+        <tr>
+          <th>Order ID</th>
+          <th>Total</th>
+          <th>Status</th>
+          <th>Placed At</th>
+        </tr>
+      </thead>
+      <tbody id="orders-body">
+        <tr class="loading-row"><td colspan="4"><div class="loader"></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- CART OVERLAY -->
+<div class="overlay" id="overlay" onclick="closeCart()"></div>
+
+<!-- CART SIDEBAR -->
+<aside class="cart-sidebar" id="cart-sidebar">
+  <div class="cart-header">
+    <h2>Your Cart</h2>
+    <button class="close-btn" onclick="closeCart()">✕</button>
+  </div>
+  <div class="cart-items" id="cart-items">
+    <div class="empty-state">Your cart is empty 🛒</div>
+  </div>
+  <div class="cart-footer">
+    <div class="cart-total">
+      <span>Total</span>
+      <span id="cart-total">$0.00</span>
+    </div>
+    <button class="checkout-btn" id="checkout-btn" onclick="checkout()" disabled>
+      Place Order
+    </button>
+  </div>
+</aside>
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────────────────────
+  const API_BASE = window.location.origin;
+
+  // Product emoji map
+  const EMOJIS = {
+    'Pixel 10 Pro':  '📱',
+    'Pixel Buds Pro':'🎧',
+    'Pixel Watch 3': '⌚',
+    'Pixel Tablet':  '💻',
+  };
+
+  // ── State ────────────────────────────────────────────────────────────────────
+  let products = [];
+  let cart = JSON.parse(localStorage.getItem('cart') || '[]');
+
+  // ── API ──────────────────────────────────────────────────────────────────────
+  async function apiFetch(path, opts = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  }
+
+  // ── Products ─────────────────────────────────────────────────────────────────
+  async function loadProducts() {
+    try {
+      const data = await apiFetch('/api/products');
+      products = data.products || [];
+      renderProducts();
+      document.getElementById('api-status').innerHTML = '⬤ connected';
+      document.getElementById('api-status').style.color = 'var(--success)';
+    } catch (err) {
+      document.getElementById('products-grid').innerHTML =
+        `<div style="grid-column:1/-1;text-align:center;padding:3rem;color:var(--muted)">
+          Failed to load products. Is the API running?<br>
+          <small style="font-family:monospace">${err.message}</small>
+        </div>`;
+      document.getElementById('api-status').innerHTML = '⬤ offline';
+      document.getElementById('api-status').style.color = '#ef4444';
+    }
+  }
+
+  function renderProducts() {
+    const grid = document.getElementById('products-grid');
+    if (!products.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--muted);padding:3rem">No products found</div>';
+      return;
+    }
+    grid.innerHTML = products.map(p => `
+      <div class="product-card">
+        <div class="product-image">${EMOJIS[p.name] || '📦'}</div>
+        <div class="product-info">
+          <div class="product-name">${p.name}</div>
+          <div class="product-desc">${p.description || ''}</div>
+          <div class="product-footer">
+            <span class="product-price">$${parseFloat(p.price).toFixed(2)}</span>
+            <button class="add-btn" onclick="addToCart('${p.id}')">+ Add</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── Cart ─────────────────────────────────────────────────────────────────────
+  function addToCart(productId) {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    const existing = cart.find(i => i.product_id === productId);
+    if (existing) {
+      existing.quantity++;
+    } else {
+      cart.push({ product_id: productId, name: product.name, price: parseFloat(product.price), quantity: 1 });
+    }
+    saveCart();
+    updateCartUI();
+    showToast('info', '🛒', 'Added to cart', product.name);
+  }
+
+  function updateQty(productId, delta) {
+    const item = cart.find(i => i.product_id === productId);
+    if (!item) return;
+    item.quantity += delta;
+    if (item.quantity <= 0) cart = cart.filter(i => i.product_id !== productId);
+    saveCart();
+    updateCartUI();
+  }
+
+  function saveCart() { localStorage.setItem('cart', JSON.stringify(cart)); }
+
+  function updateCartUI() {
+    // count badge
+    const total_qty = cart.reduce((s, i) => s + i.quantity, 0);
+    document.getElementById('cart-count').textContent = total_qty;
+
+    // sidebar items
+    const container = document.getElementById('cart-items');
+    if (!cart.length) {
+      container.innerHTML = '<div class="empty-state">Your cart is empty 🛒</div>';
+      document.getElementById('checkout-btn').disabled = true;
+      document.getElementById('cart-total').textContent = '$0.00';
+      return;
+    }
+
+    container.innerHTML = cart.map(item => `
+      <div class="cart-item">
+        <span class="cart-item-emoji">${EMOJIS[item.name] || '📦'}</span>
+        <div class="cart-item-info">
+          <div class="cart-item-name">${item.name}</div>
+          <div class="cart-item-price">$${(item.price * item.quantity).toFixed(2)}</div>
+        </div>
+        <div class="qty-controls">
+          <button class="qty-btn" onclick="updateQty('${item.product_id}', -1)">−</button>
+          <span class="qty-num">${item.quantity}</span>
+          <button class="qty-btn" onclick="updateQty('${item.product_id}', +1)">+</button>
+        </div>
+      </div>
+    `).join('');
+
+    const total = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+    document.getElementById('cart-total').textContent = `$${total.toFixed(2)}`;
+    document.getElementById('checkout-btn').disabled = false;
+  }
+
+  function openCart()  { document.getElementById('cart-sidebar').classList.add('open'); document.getElementById('overlay').classList.add('open'); }
+  function closeCart() { document.getElementById('cart-sidebar').classList.remove('open'); document.getElementById('overlay').classList.remove('open'); }
+
+  // ── Checkout ──────────────────────────────────────────────────────────────────
+  async function checkout() {
+    if (!cart.length) return;
+    const btn = document.getElementById('checkout-btn');
+    btn.disabled = true;
+    btn.textContent = 'Placing order…';
+
+    try {
+      const payload = {
+        customer_id: 'guest-' + Math.random().toString(36).slice(2, 9),
+        items: cart.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
+      };
+
+      const res = await apiFetch('/api/orders', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      cart = [];
+      saveCart();
+      updateCartUI();
+      closeCart();
+      showToast('success', '✅', 'Order placed!', `Order ${res.orderId} is being processed`);
+      switchTab('orders', document.querySelectorAll('.tab')[1]);
+      await loadOrders();
+    } catch (err) {
+      showToast('error', '❌', 'Order failed', err.message);
+      btn.disabled = false;
+      btn.textContent = 'Place Order';
+    }
+  }
+
+  // ── Orders ───────────────────────────────────────────────────────────────────
+  async function loadOrders() {
+    const tbody = document.getElementById('orders-body');
+    tbody.innerHTML = '<tr class="loading-row"><td colspan="4"><div class="loader"></div></td></tr>';
+    try {
+      const data = await apiFetch('/api/orders');
+      const orders = data.orders || [];
+      if (!orders.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:2rem">No orders yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = orders.map(o => `
+        <tr>
+          <td style="font-size:.78rem">${o.id}</td>
+          <td>$${parseFloat(o.total).toFixed(2)}</td>
+          <td><span class="status-badge status-${o.status}">${o.status}</span></td>
+          <td>${new Date(o.created_at).toLocaleString()}</td>
+        </tr>
+      `).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:2rem">${err.message}</td></tr>`;
+    }
+  }
+
+  // ── Tabs ─────────────────────────────────────────────────────────────────────
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'orders') loadOrders();
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────────
+  function showToast(type, icon, title, msg) {
+    const container = document.getElementById('toasts');
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `<span class="toast-icon">${icon}</span>
+      <div class="toast-body">
+        <div class="toast-title">${title}</div>
+        <div class="toast-msg">${msg}</div>
+      </div>`;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
+  updateCartUI();
+  loadProducts();
+
+  // Poll order status every 5s when orders tab is active
+  setInterval(() => {
+    if (document.getElementById('tab-orders').classList.contains('active')) {
+      loadOrders();
+    }
+  }, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+{
+  "rabbit_version": "3.12.0",
+  "users": [
+    {
+      "name": "admin",
+      "password_hash": "hashed_in_env",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": "administrator"
+    }
+  ],
+  "vhosts": [{ "name": "/" }],
+  "permissions": [
+    { "user": "admin", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" }
+  ],
+  "exchanges": [
+    {
+      "name": "orders.dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "orders",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange":    "orders.dlx",
+        "x-dead-letter-routing-key": "orders.dlq"
+      }
+    },
+    {
+      "name": "orders.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "orders.retry.5s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange":    "",
+        "x-dead-letter-routing-key": "orders",
+        "x-message-ttl":             5000
+      }
+    },
+    {
+      "name": "orders.retry.30s",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-dead-letter-exchange":    "",
+        "x-dead-letter-routing-key": "orders",
+        "x-message-ttl":             30000
+      }
+    },
+    {
+      "name": "orders.parking-lot",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source":           "orders.dlx",
+      "vhost":            "/",
+      "destination":      "orders.dlq",
+      "destination_type": "queue",
+      "routing_key":      "orders.dlq",
+      "arguments":        {}
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: dlq-reprocess
+  namespace: argo
+  labels:
+    app: dlq-reprocessor
+    managed-by: argocd
+spec:
+  # Run every 5 minutes
+  schedule: "*/5 * * * *"
+  timezone: "Asia/Kolkata"
+  concurrencyPolicy: Forbid       # never run two reprocess jobs simultaneously
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 30
+
+  workflowSpec:
+    entrypoint: dlq-pipeline
+    serviceAccountName: argo-workflow-sa
+
+    # Retry the whole workflow up to 2 times on transient failure
+    retryStrategy:
+      limit: "2"
+      retryPolicy: OnFailure
+      backoff:
+        duration: "30s"
+        factor: "2"
+
+    templates:
+
+      # ── Top-level pipeline (DAG) ──────────────────────────────────────────
+      - name: dlq-pipeline
+        dag:
+          tasks:
+            - name: check-dlq
+              template: check-dlq-depth
+
+            - name: reprocess-dlq
+              template: reprocess-messages
+              dependencies: [check-dlq]
+              when: "{{tasks.check-dlq.outputs.parameters.dlq_depth}} > 0"
+
+            - name: notify-parking-lot
+              template: check-parking-lot
+              dependencies: [reprocess-dlq]
+
+      # ── Step 1: Check DLQ depth via RabbitMQ Management API ───────────────
+      - name: check-dlq-depth
+        outputs:
+          parameters:
+            - name: dlq_depth
+              valueFrom:
+                path: /tmp/dlq_depth.txt
+        container:
+          image: curlimages/curl:8.5.0
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              RABBIT_HOST="${RABBIT_HOST:-rabbitmq.default.svc.cluster.local}"
+              RABBIT_USER="${RABBIT_USER:-admin}"
+              RABBIT_PASS="${RABBIT_PASS:-admin123}"
+
+              echo "Checking DLQ depth at $RABBIT_HOST..."
+              DEPTH=$(curl -s -u "$RABBIT_USER:$RABBIT_PASS" \
+                "http://$RABBIT_HOST:15672/api/queues/%2F/orders.dlq" \
+                | grep -o '"messages":[0-9]*' | head -1 | cut -d: -f2)
+
+              DEPTH="${DEPTH:-0}"
+              echo "DLQ depth: $DEPTH"
+              echo -n "$DEPTH" > /tmp/dlq_depth.txt
+          env:
+            - name: RABBIT_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: host
+            - name: RABBIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: username
+            - name: RABBIT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: password
+
+      # ── Step 2: Reprocess DLQ messages ────────────────────────────────────
+      - name: reprocess-messages
+        container:
+          image: alpine:3.19
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              apk add --no-cache curl jq
+
+              RABBIT_HOST="${RABBIT_HOST:-rabbitmq.default.svc.cluster.local}"
+              RABBIT_USER="${RABBIT_USER:-admin}"
+              RABBIT_PASS="${RABBIT_PASS:-admin123}"
+              MAX_MESSAGES="${MAX_REPROCESS:-50}"
+              MAX_RETRIES=3
+
+              echo "=== DLQ Reprocessor starting ==="
+              echo "Target: $RABBIT_HOST | Batch: $MAX_MESSAGES msgs"
+
+              PROCESSED=0
+              FAILED=0
+
+              for i in $(seq 1 $MAX_MESSAGES); do
+                # Get one message from DLQ
+                MSG=$(curl -s -u "$RABBIT_USER:$RABBIT_PASS" \
+                  -X POST \
+                  -H "Content-Type: application/json" \
+                  -d '{"count":1,"ackmode":"ack_requeue_false","encoding":"auto","truncate":50000}' \
+                  "http://$RABBIT_HOST:15672/api/queues/%2F/orders.dlq/get")
+
+                # Empty queue
+                if [ "$(echo $MSG | jq 'length')" = "0" ]; then
+                  echo "DLQ empty — processed $PROCESSED msgs"
+                  break
+                fi
+
+                ORDER_ID=$(echo $MSG | jq -r '.[0].payload | fromjson | .orderId // "unknown"')
+                RETRY_COUNT=$(echo $MSG | jq -r '.[0].properties.headers."x-retry" // 0')
+                PAYLOAD=$(echo $MSG | jq -r '.[0].payload')
+
+                echo "Reprocessing order: $ORDER_ID (was retry #$RETRY_COUNT)"
+
+                # Check if this is a poison message (retry > MAX_RETRIES)
+                if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+                  echo "Poison message detected — routing to parking lot: $ORDER_ID"
+                  curl -s -u "$RABBIT_USER:$RABBIT_PASS" \
+                    -X POST \
+                    -H "Content-Type: application/json" \
+                    -d "{\"routing_key\":\"orders.parking-lot\",\"payload\":\"$PAYLOAD\",\"payload_encoding\":\"string\",\"properties\":{\"headers\":{\"x-parked-at\":\"$(date -Iseconds)\",\"x-parked-reason\":\"max-retries-exceeded\"}}}" \
+                    "http://$RABBIT_HOST:15672/api/exchanges/%2F/amq.default/publish"
+                  FAILED=$((FAILED + 1))
+                  continue
+                fi
+
+                # Re-publish to main orders queue with incremented retry count
+                NEW_RETRY=$((RETRY_COUNT + 1))
+                REQUEUE_PAYLOAD=$(echo $PAYLOAD | jq -c .)
+
+                HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -u "$RABBIT_USER:$RABBIT_PASS" \
+                  -X POST \
+                  -H "Content-Type: application/json" \
+                  -d "{\"routing_key\":\"orders\",\"payload\":$(echo $PAYLOAD | jq -c @json),\"payload_encoding\":\"string\",\"properties\":{\"delivery_mode\":2,\"headers\":{\"x-retry\":$NEW_RETRY,\"x-origin\":\"dlq-reprocessor\",\"x-reprocessed-at\":\"$(date -Iseconds)\"}}}" \
+                  "http://$RABBIT_HOST:15672/api/exchanges/%2F/amq.default/publish")
+
+                if [ "$HTTP_STATUS" = "200" ]; then
+                  echo "✅ Re-queued: $ORDER_ID (retry #$NEW_RETRY)"
+                  PROCESSED=$((PROCESSED + 1))
+                else
+                  echo "❌ Failed to re-queue: $ORDER_ID (HTTP $HTTP_STATUS)"
+                  FAILED=$((FAILED + 1))
+                fi
+
+                # Small delay between messages to avoid flooding
+                sleep 0.5
+              done
+
+              echo "=== DLQ Reprocessor complete: $PROCESSED re-queued, $FAILED failed/parked ==="
+          env:
+            - name: RABBIT_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: host
+            - name: RABBIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: username
+            - name: RABBIT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: password
+            - name: MAX_REPROCESS
+              value: "50"
+
+      # ── Step 3: Alert if parking lot has messages ─────────────────────────
+      - name: check-parking-lot
+        container:
+          image: curlimages/curl:8.5.0
+          command: [sh, -c]
+          args:
+            - |
+              RABBIT_HOST="${RABBIT_HOST:-rabbitmq.default.svc.cluster.local}"
+              RABBIT_USER="${RABBIT_USER:-admin}"
+              RABBIT_PASS="${RABBIT_PASS:-admin123}"
+
+              PARKED=$(curl -s -u "$RABBIT_USER:$RABBIT_PASS" \
+                "http://$RABBIT_HOST:15672/api/queues/%2F/orders.parking-lot" \
+                | grep -o '"messages":[0-9]*' | head -1 | cut -d: -f2)
+
+              PARKED="${PARKED:-0}"
+              if [ "$PARKED" -gt "0" ]; then
+                echo "⚠️  ALERT: $PARKED poison messages in parking lot — manual review required"
+                exit 0   # don't fail workflow — just log
+              else
+                echo "✅ Parking lot is clean"
+              fi
+          env:
+            - name: RABBIT_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: host
+            - name: RABBIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: username
+            - name: RABBIT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-secret
+                  key: password

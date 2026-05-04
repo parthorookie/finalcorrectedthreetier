@@ -1,0 +1,391 @@
+name: CI - Build, Test, Scan & Push
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_BACKEND_REPO: ecommerce-backend
+  ECR_WORKER_REPO: ecommerce-worker
+  ECR_FRONTEND_REPO: ecommerce-frontend
+  NODE_VERSION: "18"
+  IMAGE_TAG: ${{ github.sha }}  # fallback
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1: Unit Tests
+  # ─────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: ecommerce_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      rabbitmq:
+        image: rabbitmq:3.12-management
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmqctl status"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: |
+            app/backend/package-lock.json
+            app/worker/package-lock.json
+
+      - name: Install backend deps
+        run: npm ci
+        working-directory: app/backend
+
+      - name: Install worker deps
+        run: npm ci
+        working-directory: app/worker
+
+      - name: Run backend unit tests
+        run: npm test -- --coverage
+        working-directory: app/backend
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: ecommerce_test
+          DB_USER: postgres
+          DB_PASS: testpassword
+          RABBIT_URL: amqp://localhost:5672
+          NODE_ENV: test
+
+      - name: Run worker unit tests
+        run: npm test -- --coverage
+        working-directory: app/worker
+        env:
+          RABBIT_URL: amqp://localhost:5672
+          NODE_ENV: test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./app/backend/coverage/lcov.info,./app/worker/coverage/lcov.info
+          fail_ci_if_error: false
+
+  # ─────────────────────────────────────────────
+  # JOB 2: SAST - SonarQube
+  # ─────────────────────────────────────────────
+  sonarqube:
+    name: SonarQube SAST
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.organization=parthorookie
+            -Dsonar.projectKey=parthorookie_ecommercethreetierevent1editedcopyreviewpracticelive
+            -Dsonar.sources=app
+
+  # ─────────────────────────────────────────────
+  # JOB 3: Dependency Scanning - Snyk
+  # ─────────────────────────────────────────────
+  snyk:
+    name: Snyk Dependency Scan
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Snyk - Backend
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=app/backend/package.json
+
+      - name: Snyk - Worker
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=app/worker/package.json
+
+      - name: Snyk IaC Scan
+        uses: snyk/actions/iac@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high terraform/
+
+  # ─────────────────────────────────────────────
+  # JOB 4: Build Docker Images
+  # ─────────────────────────────────────────────
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [sonarqube, snyk]
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.sha_short }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: meta
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Backend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/backend
+          file: ./app/backend/Dockerfile
+          push: false
+          tags: backend:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/backend.tar
+
+      - name: Build Worker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/worker
+          file: ./app/worker/Dockerfile
+          push: false
+          tags: worker:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/worker.tar
+
+      - name: Build Frontend Image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app/frontend
+          file: ./app/frontend/Dockerfile
+          push: false
+          tags: frontend:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/frontend.tar
+
+      - name: Upload image artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: /tmp/*.tar
+          retention-days: 1
+
+  # ─────────────────────────────────────────────
+  # JOB 5: Container Security - Trivy
+  # ─────────────────────────────────────────────
+  trivy:
+    name: Trivy Container Scan
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: /tmp
+
+      - name: Load Docker images
+        run: |
+          docker load --input /tmp/backend.tar
+          docker load --input /tmp/worker.tar
+          docker load --input /tmp/frontend.tar
+
+      - name: Get image tag
+        id: meta
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Trivy scan - Backend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: backend:${{ steps.meta.outputs.sha_short }}
+          format: "sarif"
+          output: "trivy-backend.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      - name: Trivy scan - Worker
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: worker:${{ steps.meta.outputs.sha_short }}
+          format: "sarif"
+          output: "trivy-worker.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+      - name: Trivy scan - Frontend
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: frontend:${{ steps.meta.outputs.sha_short }}
+          format: "sarif"
+          output: "trivy-frontend.sarif"
+          severity: "CRITICAL,HIGH"
+          exit-code: "0"
+
+  # ─────────────────────────────────────────────
+  # JOB 6: Push to ECR + Update Helm (GitOps)
+  # ─────────────────────────────────────────────
+  push-ecr:
+    name: Push Images to ECR & Update Helm
+    runs-on: ubuntu-latest
+    needs: trivy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.sha_short }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get image tag
+        id: meta
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Download image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: /tmp
+
+      - name: Load Docker images
+        run: |
+          docker load --input /tmp/backend.tar
+          docker load --input /tmp/worker.tar
+          docker load --input /tmp/frontend.tar
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repositories exist
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.ECR_BACKEND_REPO }} || \
+          aws ecr create-repository --repository-name ${{ env.ECR_BACKEND_REPO }} --image-scanning-configuration scanOnPush=true
+
+          aws ecr describe-repositories --repository-names ${{ env.ECR_WORKER_REPO }} || \
+          aws ecr create-repository --repository-name ${{ env.ECR_WORKER_REPO }} --image-scanning-configuration scanOnPush=true
+
+          aws ecr describe-repositories --repository-names ${{ env.ECR_FRONTEND_REPO }} || \
+          aws ecr create-repository --repository-name ${{ env.ECR_FRONTEND_REPO }} --image-scanning-configuration scanOnPush=true
+
+      - name: Tag and push backend
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ steps.meta.outputs.sha_short }}
+        run: |
+          docker tag backend:$TAG $REGISTRY/${{ env.ECR_BACKEND_REPO }}:$TAG
+          docker tag backend:$TAG $REGISTRY/${{ env.ECR_BACKEND_REPO }}:latest
+          docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:$TAG
+          docker push $REGISTRY/${{ env.ECR_BACKEND_REPO }}:latest
+
+      - name: Tag and push worker
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ steps.meta.outputs.sha_short }}
+        run: |
+          docker tag worker:$TAG $REGISTRY/${{ env.ECR_WORKER_REPO }}:$TAG
+          docker tag worker:$TAG $REGISTRY/${{ env.ECR_WORKER_REPO }}:latest
+          docker push $REGISTRY/${{ env.ECR_WORKER_REPO }}:$TAG
+          docker push $REGISTRY/${{ env.ECR_WORKER_REPO }}:latest
+
+      - name: Tag and push frontend
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ steps.meta.outputs.sha_short }}
+        run: |
+          docker tag frontend:$TAG $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:$TAG
+          docker tag frontend:$TAG $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:latest
+          docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:$TAG
+          docker push $REGISTRY/${{ env.ECR_FRONTEND_REPO }}:latest
+
+      # ───── Update Helm values (New Structure) ─────
+      - name: Update Helm values with new image tags
+        env:
+          TAG: ${{ steps.meta.outputs.sha_short }}
+        run: |
+          # ecommerce chart (frontend + backend)
+          sed -i "s|tag: \"[^\"]*\"|tag: \"$TAG\"|g" helm/ecommerce/values.yaml
+
+          # worker chart
+          sed -i "s|tag: \"[^\"]*\"|tag: \"$TAG\"|g" helm/worker/values.yaml
+
+      - name: Commit updated Helm values (GitOps)
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "github-actions[bot]"
+          
+          git add helm/ecommerce/values.yaml
+          git add helm/worker/values.yaml
+          
+          if git diff --staged --quiet; then
+            echo "No changes to Helm values"
+          else
+            git commit -m "ci: update image tags to ${{ steps.meta.outputs.sha_short }} [skip ci]"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main
+          fi
