@@ -111,7 +111,7 @@ jobs:
 
             # Refresh state to detect existing resources
             echo "→ Refreshing Terraform state..."
-            terraform refresh \
+            terraform apply -refresh-only -auto-approve
               -var="region=${{ env.AWS_REGION }}" \
               -var="db_password=${DB_PASSWORD}" \
               -var="operator_ip_cidr=${OPERATOR_IP}"
