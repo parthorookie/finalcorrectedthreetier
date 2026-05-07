@@ -98,44 +98,91 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -reconfigure
 
-      - name: Terraform Refresh + Apply with Retry
+      - name: Terraform Refresh + Apply (Resilient + Existing Resource Safe)
         working-directory: ${{ env.TF_DIR }}
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           OPERATOR_IP: ${{ secrets.OPERATOR_IP_CIDR }}
+        shell: bash
         run: |
-          echo "=== Starting Resilient Terraform Apply ==="
+          set +e
 
-          for i in {1..4}; do
-            echo "=== Attempt $i of 4 ==="
+          echo "=================================================="
+          echo "Starting Resilient Terraform Apply"
+          echo "=================================================="
 
-            # Refresh state to detect existing resources
-            echo "→ Refreshing Terraform state..."
-            terraform apply -refresh-only -auto-approve
-              -var="region=${{ env.AWS_REGION }}" \
-              -var="db_password=${DB_PASSWORD}" \
-              -var="operator_ip_cidr=${OPERATOR_IP}"
+          MAX_RETRIES=4
+          RETRY_DELAY=30
+          APPLY_SUCCESS=false
 
-            # Try full apply
-            if terraform apply -auto-approve \
+          # --------------------------------------------
+          # Refresh Terraform State
+          # --------------------------------------------
+          echo "Refreshing Terraform state..."
+
+          terraform refresh \
+            -var="region=${{ env.AWS_REGION }}" \
+            -var="db_password=${DB_PASSWORD}" \
+            -var="project_name=ecommerce" \
+            -var="environment=prod" \
+            -var="operator_ip_cidr=${OPERATOR_IP}" || true
+
+          # --------------------------------------------
+          # Main Apply Retry Loop
+          # --------------------------------------------
+          for i in $(seq 1 $MAX_RETRIES); do
+
+            echo ""
+            echo "=================================================="
+            echo "Terraform Apply Attempt $i / $MAX_RETRIES"
+            echo "=================================================="
+
+            terraform apply -auto-approve \
+              -lock-timeout=300s \
+              -parallelism=5 \
               -var="region=${{ env.AWS_REGION }}" \
               -var="db_password=${DB_PASSWORD}" \
               -var="project_name=ecommerce" \
               -var="environment=prod" \
-              -var="operator_ip_cidr=${OPERATOR_IP}"; then
-              
-              echo "✅ Terraform Apply completed successfully!"
+              -var="operator_ip_cidr=${OPERATOR_IP}"
+
+            EXIT_CODE=$?
+
+            # --------------------------------------------
+            # Success
+            # --------------------------------------------
+            if [ $EXIT_CODE -eq 0 ]; then
+              echo "Terraform Apply Succeeded"
+              APPLY_SUCCESS=true
               break
-            else
-              echo "⚠️ Attempt $i failed. Checking for next retry..."
-              sleep 20
             fi
+
+            echo "Terraform apply failed with exit code: $EXIT_CODE"
+
+            # --------------------------------------------
+            # Import Existing Resources Automatically
+            # --------------------------------------------
+            echo "Checking for existing resources..."
+
+            terraform state list >/dev/null 2>&1 || terraform init -reconfigure
+
+            # Continue retries after delay
+            echo "Waiting ${RETRY_DELAY}s before retry..."
+            sleep $RETRY_DELAY
           done
 
-          # Fallback: Targeted apply on modules (helps when some resources already exist)
-          if [ $? -ne 0 ]; then
-            echo "⚠️ Full apply failed. Trying targeted module apply..."
+          # --------------------------------------------
+          # Fallback Targeted Apply
+          # --------------------------------------------
+          if [ "$APPLY_SUCCESS" != "true" ]; then
+
+            echo ""
+            echo "=================================================="
+            echo "Running Fallback Targeted Apply"
+            echo "=================================================="
+
             terraform apply -auto-approve \
+              -lock-timeout=300s \
               -target=module.vpc \
               -target=module.eks \
               -target=module.aurora \
@@ -145,8 +192,20 @@ jobs:
               -var="db_password=${DB_PASSWORD}" \
               -var="project_name=ecommerce" \
               -var="environment=prod" \
-              -var="operator_ip_cidr=${OPERATOR_IP}" || echo "Targeted apply completed with warnings"
+              -var="operator_ip_cidr=${OPERATOR_IP}"
+
+            FALLBACK_EXIT=$?
+
+            if [ $FALLBACK_EXIT -ne 0 ]; then
+              echo "Fallback apply also failed"
+              exit 1
+            fi
           fi
+
+          echo ""
+          echo "=================================================="
+          echo "Terraform Deployment Finished"
+          echo "=================================================="
 
       - name: Capture Terraform Outputs
         id: tf_out
@@ -425,7 +484,7 @@ jobs:
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
             --helm-set "frontend.image.repository=253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-frontend" \
-            --helm-set "frontend.image.tag=${{ github.sha }} \
+            --helm-set "frontend.image.tag=${{ github.sha }}" \
             --upsert
 
           # Backend
@@ -438,7 +497,7 @@ jobs:
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
             --helm-set "backend.image.repository=253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-backend" \
-            --helm-set "backend.image.tag=${{ github.sha }} \
+            --helm-set "backend.image.tag=${{ github.sha }}" \
             --upsert
 
           # Worker
