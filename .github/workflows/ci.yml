@@ -119,7 +119,7 @@ jobs:
         with:
           args: >
             -Dsonar.organization=parthorookie
-            -Dsonar.projectKey=parthorookie_ecommercethreetierevent1editedcopyreviewpracticelive
+            -Dsonar.projectKey=parthorookie_finalcorrectedthreetier
             -Dsonar.sources=app
 
   # ─────────────────────────────────────────────
