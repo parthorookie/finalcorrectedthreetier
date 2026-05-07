@@ -98,6 +98,42 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -reconfigure
 
+      - name: Auto Import Existing Resources
+        working-directory: ${{ env.TF_DIR }}
+        shell: bash
+        run: |
+
+          echo "=================================================="
+          echo "Checking existing AWS resources"
+          echo "=================================================="
+          
+          SG_ID=$(aws ec2 describe-security-groups \
+                --filters Name=group-name,Values=ecommerce-alb-sg \
+               --query "SecurityGroups[0].GroupId" \
+                --output text 2>/dev/null || echo "")
+
+                # SECURITY GROUP IMPORT                
+
+          if [[ "$SG_ID" != "" && "$SG_ID" != "None" ]]; then
+          echo "Existing SG found: $SG_ID"
+
+          terraform import \
+            module.alb_waf.aws_security_group.alb_sg \
+            "$SG_ID" || true
+          else
+          echo "Security Group not found"
+          fi          
+
+          if [[ "$SG_ID" != "" && "$SG_ID" != "None" ]]; then
+          echo "Existing SG found: $SG_ID"
+
+          terraform import \
+            module.alb_waf.aws_security_group.alb_sg \
+            "$SG_ID" || true
+          else
+          echo "Security Group not found"
+          fi
+
       - name: Terraform Refresh + Apply (Resilient + Existing Resource Safe)
         working-directory: ${{ env.TF_DIR }}
         env:
