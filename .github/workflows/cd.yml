@@ -18,7 +18,7 @@ env:
   AWS_REGION:       ap-south-1
   TF_DIR:           terraform
   EKS_CLUSTER_NAME: ecommerce-eks
-  GITHUB_REPO:      https://github.com/parthorookie/ecommercethreetierevent1editedcopyreviewpracticelive
+  GITHUB_REPO:      https://github.com/parthorookie/finalcorrectedthreetier
 
 jobs:
 
@@ -689,5 +689,5 @@ jobs:
           echo ""
           echo "=================================================================="
           echo "GitOps Active → Push to main → ArgoCD auto-syncs to EKS"
-          echo "Repository: https://github.com/parthorookie/ecommercethreetierevent1edited"
+          echo "Repository: "https://github.com/parthorookie/finalcorrectedthreetier"
           echo "=================================================================="
