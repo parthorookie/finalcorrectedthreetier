@@ -424,7 +424,7 @@ jobs:
             --dest-namespace default \
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
-            --helm-set "frontend.image.repository=your-ecr-frontend-repo" \
+            --helm-set "frontend.image.repository=253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-frontend" \
             --helm-set "frontend.image.tag=${{ github.sha }} \
             --upsert
 
@@ -437,7 +437,7 @@ jobs:
             --dest-namespace default \
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
-            --helm-set "backend.image.repository=your-ecr-backend-repo" \
+            --helm-set "backend.image.repository=253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-backend" \
             --helm-set "backend.image.tag=${{ github.sha }} \
             --upsert
 
@@ -450,7 +450,7 @@ jobs:
             --dest-namespace worker \
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
-            --helm-set "image.repository=your-ecr-worker-repo" \
+            --helm-set "image.repository=253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-worker" \
             --helm-set "image.tag=${{ github.sha }}" \
             --upsert
 

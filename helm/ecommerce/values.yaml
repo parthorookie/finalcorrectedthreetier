@@ -2,13 +2,13 @@ replicaCount: 2
 
 frontend:
   image:
-    repository: "YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/frontend"
+    repository: "253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-frontend"
     tag: "latest"
     pullPolicy: IfNotPresent
 
 backend:
   image:
-    repository: "YOUR_AWS_ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/backend"
+    repository: "253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-backend"
     tag: "latest"
     pullPolicy: IfNotPresent
 
