@@ -425,7 +425,7 @@ jobs:
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
             --helm-set "frontend.image.repository=your-ecr-frontend-repo" \
-            --helm-set "frontend.image.tag=${{ env.IMAGE_TAG }}" \
+            --helm-set "frontend.image.tag=${{ github.sha }} \
             --upsert
 
           # Backend
@@ -438,7 +438,7 @@ jobs:
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
             --helm-set "backend.image.repository=your-ecr-backend-repo" \
-            --helm-set "backend.image.tag=${{ env.IMAGE_TAG }}" \
+            --helm-set "backend.image.tag=${{ github.sha }} \
             --upsert
 
           # Worker
@@ -451,7 +451,7 @@ jobs:
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
             --helm-set "image.repository=your-ecr-worker-repo" \
-            --helm-set "image.tag=${{ env.IMAGE_TAG }}" \
+            --helm-set "image.tag=${{ github.sha }}" \
             --upsert
 
       - name: Trigger Sync
@@ -488,7 +488,7 @@ jobs:
           kubectl create secret generic app-secrets \
             --from-literal=db-host="${{ needs.terraform-apply.outputs.aurora_endpoint }}" \
             --from-literal=db-password="${{ secrets.DB_PASSWORD }}" \
-            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_ip }}:5672" \
+            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}:5672" \
             --namespace default --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create app-secrets — worker namespace
@@ -496,22 +496,22 @@ jobs:
           kubectl create secret generic app-secrets \
             --from-literal=db-host="${{ needs.terraform-apply.outputs.aurora_endpoint }}" \
             --from-literal=db-password="${{ secrets.DB_PASSWORD }}" \
-            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_ip }}:5672" \
+            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}:5672" \
             --namespace worker --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create rabbitmq-secret — worker namespace (KEDA)
         run: |
           kubectl create secret generic rabbitmq-secret \
-            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_ip }}:5672" \
+            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}:5672" \
             --namespace worker --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create rabbitmq-secret — argo namespace (CronWorkflow)
         run: |
           kubectl create secret generic rabbitmq-secret \
-            --from-literal=host="${{ needs.terraform-apply.outputs.rabbitmq_ip }}" \
+            --from-literal=host="$${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}" \
             --from-literal=username="admin" \
             --from-literal=password="${{ secrets.RABBITMQ_PASSWORD }}" \
-            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_ip }}:5672" \
+            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}:5672" \
             --namespace argo --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply KEDA ScaledObject
