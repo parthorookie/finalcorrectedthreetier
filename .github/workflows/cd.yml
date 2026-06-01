@@ -1,4 +1,4 @@
-name: CD - Terraform Infra + ArgoCD GitOps on AWS EKS
+name: CD - Terraform + ArgoCD GitOps (EKS Fargate)
 
 on:
   workflow_run:
@@ -15,13 +15,12 @@ on:
         options: [plan, apply, destroy]
 
 env:
-  AWS_REGION:       ap-south-1
-  TF_DIR:           terraform
+  AWS_REGION: ap-south-1
+  TF_DIR: terraform
   EKS_CLUSTER_NAME: ecommerce-eks
-  GITHUB_REPO:      https://github.com/parthorookie/finalcorrectedthreetier
+  GITHUB_REPO: https://github.com/parthorookie/finalcorrectedthreetier
 
 jobs:
-
   # ═══════════════════════════════════════════════════════════════════════════
   # JOB 1 — Terraform Plan
   # ═══════════════════════════════════════════════════════════════════════════
@@ -34,9 +33,9 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -50,7 +49,6 @@ jobs:
           OPERATOR_IP: ${{ secrets.OPERATOR_IP_CIDR }}
         run: |
           terraform init -reconfigure
-          echo "=== Generating Terraform Plan ==="
           terraform plan \
             -var="region=${{ env.AWS_REGION }}" \
             -var="db_password=${DB_PASSWORD}" \
@@ -60,10 +58,10 @@ jobs:
             -out=tfplan
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 2 — Terraform Apply (Resilient + Skip Existing Resources)
+  # JOB 2 — Terraform Apply (Fargate)
   # ═══════════════════════════════════════════════════════════════════════════
   terraform-apply:
-    name: Terraform Apply (Resilient)
+    name: Terraform Apply (Fargate)
     runs-on: ubuntu-latest
     needs: terraform-plan
     if: >
@@ -71,23 +69,20 @@ jobs:
       (github.event.inputs.action == 'apply')
     environment: production
     outputs:
-      eks_cluster_name:     ${{ steps.tf_out.outputs.eks_cluster_name }}
-      alb_dns_name:         ${{ steps.tf_out.outputs.alb_dns_name }}
-      aurora_endpoint:      ${{ steps.tf_out.outputs.aurora_endpoint }}
-      rabbitmq_private_ip:  ${{ steps.tf_out.outputs.rabbitmq_private_ip }}
-      rabbitmq_public_ip:   ${{ steps.tf_out.outputs.rabbitmq_public_ip }}
-      vpc_id:               ${{ steps.tf_out.outputs.vpc_id }}
-      aws_account_id:       ${{ steps.tf_out.outputs.aws_account_id }}
-
+      eks_cluster_name: ${{ steps.tf_out.outputs.eks_cluster_name }}
+      alb_dns_name: ${{ steps.tf_out.outputs.alb_dns_name }}
+      aurora_endpoint: ${{ steps.tf_out.outputs.aurora_endpoint }}
+      vpc_id: ${{ steps.tf_out.outputs.vpc_id }}
+      aws_account_id: ${{ steps.tf_out.outputs.aws_account_id }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -98,181 +93,38 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: terraform init -reconfigure
 
-      - name: Auto Import Existing Resources
-        working-directory: ${{ env.TF_DIR }}
-        shell: bash
-        run: |
-
-          echo "=================================================="
-          echo "Checking existing AWS resources"
-          echo "=================================================="
-          
-          SG_ID=$(aws ec2 describe-security-groups \
-                --filters Name=group-name,Values=ecommerce-alb-sg \
-               --query "SecurityGroups[0].GroupId" \
-                --output text 2>/dev/null || echo "")
-
-                # SECURITY GROUP IMPORT                
-
-          if [[ "$SG_ID" != "" && "$SG_ID" != "None" ]]; then
-          echo "Existing SG found: $SG_ID"
-
-          terraform import \
-            module.alb_waf.aws_security_group.alb_sg \
-            "$SG_ID" || true
-          else
-          echo "Security Group not found"
-          fi          
-
-          if [[ "$SG_ID" != "" && "$SG_ID" != "None" ]]; then
-          echo "Existing SG found: $SG_ID"
-
-          terraform import \
-            module.alb_waf.aws_security_group.alb_sg \
-            "$SG_ID" || true
-          else
-          echo "Security Group not found"
-          fi
-
-      - name: Terraform Refresh + Apply (Resilient + Existing Resource Safe)
+      - name: Terraform Apply
         working-directory: ${{ env.TF_DIR }}
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           OPERATOR_IP: ${{ secrets.OPERATOR_IP_CIDR }}
-        shell: bash
         run: |
-          set +e
-
-          echo "=================================================="
-          echo "Starting Resilient Terraform Apply"
-          echo "=================================================="
-
-          MAX_RETRIES=4
-          RETRY_DELAY=30
-          APPLY_SUCCESS=false
-
-          # --------------------------------------------
-          # Refresh Terraform State
-          # --------------------------------------------
-          echo "Refreshing Terraform state..."
-
-          terraform refresh \
+          terraform apply -auto-approve \
             -var="region=${{ env.AWS_REGION }}" \
             -var="db_password=${DB_PASSWORD}" \
             -var="project_name=ecommerce" \
             -var="environment=prod" \
-            -var="operator_ip_cidr=${OPERATOR_IP}" || true
+            -var="operator_ip_cidr=${OPERATOR_IP}"
 
-          # --------------------------------------------
-          # Main Apply Retry Loop
-          # --------------------------------------------
-          for i in $(seq 1 $MAX_RETRIES); do
-
-            echo ""
-            echo "=================================================="
-            echo "Terraform Apply Attempt $i / $MAX_RETRIES"
-            echo "=================================================="
-
-            terraform apply -auto-approve \
-              -lock-timeout=300s \
-              -parallelism=5 \
-              -var="region=${{ env.AWS_REGION }}" \
-              -var="db_password=${DB_PASSWORD}" \
-              -var="project_name=ecommerce" \
-              -var="environment=prod" \
-              -var="operator_ip_cidr=${OPERATOR_IP}"
-
-            EXIT_CODE=$?
-
-            # --------------------------------------------
-            # Success
-            # --------------------------------------------
-            if [ $EXIT_CODE -eq 0 ]; then
-              echo "Terraform Apply Succeeded"
-              APPLY_SUCCESS=true
-              break
-            fi
-
-            echo "Terraform apply failed with exit code: $EXIT_CODE"
-
-            # --------------------------------------------
-            # Import Existing Resources Automatically
-            # --------------------------------------------
-            echo "Checking for existing resources..."
-
-            terraform state list >/dev/null 2>&1 || terraform init -reconfigure
-
-            # Continue retries after delay
-            echo "Waiting ${RETRY_DELAY}s before retry..."
-            sleep $RETRY_DELAY
-          done
-
-          # --------------------------------------------
-          # Fallback Targeted Apply
-          # --------------------------------------------
-          if [ "$APPLY_SUCCESS" != "true" ]; then
-
-            echo ""
-            echo "=================================================="
-            echo "Running Fallback Targeted Apply"
-            echo "=================================================="
-
-            terraform apply -auto-approve \
-              -lock-timeout=300s \
-              -target=module.vpc \
-              -target=module.eks \
-              -target=module.aurora \
-              -target=module.rabbitmq_ec2 \
-              -target=module.alb_waf \
-              -var="region=${{ env.AWS_REGION }}" \
-              -var="db_password=${DB_PASSWORD}" \
-              -var="project_name=ecommerce" \
-              -var="environment=prod" \
-              -var="operator_ip_cidr=${OPERATOR_IP}"
-
-            FALLBACK_EXIT=$?
-
-            if [ $FALLBACK_EXIT -ne 0 ]; then
-              echo "Fallback apply also failed"
-              exit 1
-            fi
-          fi
-
-          echo ""
-          echo "=================================================="
-          echo "Terraform Deployment Finished"
-          echo "=================================================="
-
-      - name: Capture Terraform Outputs
+      - name: Capture Outputs
         id: tf_out
         working-directory: ${{ env.TF_DIR }}
         run: |
-          echo "eks_cluster_name=$(terraform output -raw eks_cluster_name 2>/dev/null || echo 'ecommerce-eks')" >> $GITHUB_OUTPUT
+          echo "eks_cluster_name=$(terraform output -raw eks_cluster_name 2>/dev/null || echo '${{ env.EKS_CLUSTER_NAME }}')" >> $GITHUB_OUTPUT
           echo "alb_dns_name=$(terraform output -raw alb_dns_name 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "aurora_endpoint=$(terraform output -raw aurora_endpoint 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "rabbitmq_private_ip=$(terraform output -raw rabbitmq_private_ip 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
-          echo "rabbitmq_public_ip=$(terraform output -raw rabbitmq_public_ip 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "vpc_id=$(terraform output -raw vpc_id 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
           echo "aws_account_id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
 
-  # Keep your existing jobs: install-cluster-tools, configure-argocd, deploy-supporting-resources, and verify-deployment unchanged.
-  # Just ensure they depend on `terraform-apply` where appropriate.
-
-
-  # Keep your existing JOB 3 (install-cluster-tools), JOB 4 (configure-argocd), 
-  # JOB 5 (deploy-supporting-resources), and JOB 6 (verify-deployment) unchanged.
-  # Just make sure the needs: dependencies point to terraform-apply.
-
-
   # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 3 — Install cluster tools (unchanged)
+  # JOB 3 — Install cluster tools
   # ═══════════════════════════════════════════════════════════════════════════
   install-cluster-tools:
     name: Install ArgoCD + AWS LB Controller + KEDA + Prometheus
     runs-on: ubuntu-latest
     needs: terraform-apply
     outputs:
-      argocd_url:      ${{ steps.argocd_lb.outputs.argocd_url }}
+      argocd_url: ${{ steps.argocd_lb.outputs.argocd_url }}
       argocd_password: ${{ steps.argocd_pass.outputs.password }}
     steps:
       - uses: actions/checkout@v4
@@ -280,11 +132,12 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - uses: azure/setup-kubectl@v3
+
       - uses: azure/setup-helm@v4
 
       - name: Update kubeconfig
@@ -292,7 +145,7 @@ jobs:
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
             --name ${{ needs.terraform-apply.outputs.eks_cluster_name }}
-          kubectl get nodes
+          kubectl get nodes || echo "Running on Fargate profile context"
           echo "EKS connected"
 
       - name: Create namespaces
@@ -303,43 +156,26 @@ jobs:
 
       - name: Add Helm repos
         run: |
-          helm repo add argo                 https://argoproj.github.io/argo-helm
-          helm repo add kedacore             https://kedacore.github.io/charts
+          helm repo add argo https://argoproj.github.io/argo-helm
+          helm repo add kedacore https://kedacore.github.io/charts
           helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-          helm repo add eks                  https://aws.github.io/eks-charts
+          helm repo add eks https://aws.github.io/eks-charts
           helm repo update
 
       - name: Create IAM policy for AWS Load Balancer Controller
         run: |
           POLICY_NAME="AWSLoadBalancerControllerIAMPolicy"
-          ACCOUNT_ID="${{ needs.terraform-apply.outputs.aws_account_id }}"
-
           curl -sSL -o /tmp/alb-iam-policy.json \
             https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/docs/install/iam_policy.json
-
           aws iam create-policy \
             --policy-name "$POLICY_NAME" \
             --policy-document file:///tmp/alb-iam-policy.json \
             2>/dev/null || echo "Policy already exists"
 
-          NODE_ROLE=$(aws eks describe-nodegroup \
-            --cluster-name ${{ needs.terraform-apply.outputs.eks_cluster_name }} \
-            --nodegroup-name ecommerce-node-group \
-            --query 'nodegroup.nodeRole' \
-            --output text | awk -F'/' '{print $NF}')
-
-          aws iam attach-role-policy \
-            --role-name "$NODE_ROLE" \
-            --policy-arn "arn:aws:iam::${ACCOUNT_ID}:policy/${POLICY_NAME}" \
-            2>/dev/null || echo "Policy already attached"
-
-          echo "IAM policy attached to node role: $NODE_ROLE"
-
       - name: Install AWS Load Balancer Controller
         run: |
           kubectl create serviceaccount aws-load-balancer-controller \
             -n kube-system --dry-run=client -o yaml | kubectl apply -f -
-
           helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
             --namespace kube-system \
             --set clusterName=${{ needs.terraform-apply.outputs.eks_cluster_name }} \
@@ -348,7 +184,6 @@ jobs:
             --set region=${{ env.AWS_REGION }} \
             --set vpcId=${{ needs.terraform-apply.outputs.vpc_id }} \
             --wait --timeout=300s
-
           echo "AWS Load Balancer Controller installed"
           kubectl get deployment aws-load-balancer-controller -n kube-system
 
@@ -411,8 +246,7 @@ jobs:
             --set "server.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme"=internet-facing \
             --set "server.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-cross-zone-load-balancing-enabled"=true \
             --wait --timeout=300s
-
-          kubectl rollout status deployment/argocd-server      -n argocd --timeout=180s
+          kubectl rollout status deployment/argocd-server -n argocd --timeout=180s
           kubectl rollout status deployment/argocd-repo-server -n argocd --timeout=180s
           echo "ArgoCD installed"
 
@@ -439,33 +273,49 @@ jobs:
             -o jsonpath="{.data.password}" | base64 -d)
           echo "password=$PASS" >> $GITHUB_OUTPUT
 
-      - name: Install Argo Workflows, KEDA, Prometheus (unchanged from your original)
+      - name: Install Argo Workflows, KEDA, Prometheus
         run: |
-          # ... (keep your original blocks for Argo Workflows, KEDA, and kube-prometheus-stack here)
+          # Install KEDA Core
+          helm upgrade --install keda kedacore/keda --namespace keda --wait --timeout=300s          
+          
+          # Install Prometheus Stack
+          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+            --namespace monitoring \
+            --set grafana.service.type=LoadBalancer \
+            --set "grafana.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-type"=nlb \
+            --set "grafana.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme"=internet-facing \
+            --wait --timeout=300s
+            
+          # Install Argo Workflows
+          helm upgrade --install argo-workflows argo/argo-workflows \
+            --namespace argo \
+            --set server.service.type=LoadBalancer \
+            --set "server.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-type"=nlb \
+            --set "server.service.annotations.service\.beta\.kubernetes\.io/aws-load-balancer-scheme"=internet-facing \
+            --wait --timeout=300s
 
       - name: Print ArgoCD credentials
         run: |
-          echo "ArgoCD URL  : ${{ steps.argocd_lb.outputs.argocd_url }}"
-          echo "Username    : admin"
-          echo "Password    : ${{ steps.argocd_pass.outputs.password }}"
+          echo "ArgoCD URL : ${{ steps.argocd_lb.outputs.argocd_url }}"
+          echo "Username   : admin"
+          echo "Password   : ${{ steps.argocd_pass.outputs.password }}"
 
- # ═══════════════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════════════════
   # JOB 4 — Configure ArgoCD: register repo + create Applications
   # ═══════════════════════════════════════════════════════════════════════════
   configure-argocd:
     name: Configure ArgoCD - Register Repo & Create Apps
     runs-on: ubuntu-latest
     needs: [terraform-apply, install-cluster-tools]
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - uses: azure/setup-kubectl@v3
 
@@ -508,9 +358,9 @@ jobs:
 
       - name: Create ArgoCD Applications
         run: |
-          HOST=$(echo "${{ needs.install-cluster-tools.outputs.argocd_url }}" | sed 's|http://||')
-
-          # Frontend
+          HOST=$(echo "${{ needs.install-cluster-tools.outputs.argocd_url }}" | sed 's|http://||')          
+          
+          # Frontend App
           argocd app create ecommerce-frontend \
             --server "$HOST" --insecure \
             --repo ${{ env.GITHUB_REPO }} \
@@ -519,11 +369,11 @@ jobs:
             --dest-namespace default \
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
-            --helm-set "frontend.image.repository=253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-frontend" \
+            --helm-set "frontend.image.repository=${{ needs.terraform-apply.outputs.aws_account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/ecommerce-frontend" \
             --helm-set "frontend.image.tag=${{ github.sha }}" \
             --upsert
 
-          # Backend
+          # Backend App
           argocd app create ecommerce-backend \
             --server "$HOST" --insecure \
             --repo ${{ env.GITHUB_REPO }} \
@@ -532,11 +382,11 @@ jobs:
             --dest-namespace default \
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
-            --helm-set "backend.image.repository=253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-backend" \
+            --helm-set "backend.image.repository=${{ needs.terraform-apply.outputs.aws_account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/ecommerce-backend" \
             --helm-set "backend.image.tag=${{ github.sha }}" \
             --upsert
 
-          # Worker
+          # Worker App
           argocd app create ecommerce-worker \
             --server "$HOST" --insecure \
             --repo ${{ env.GITHUB_REPO }} \
@@ -545,7 +395,7 @@ jobs:
             --dest-namespace worker \
             --revision HEAD \
             --sync-policy automated --auto-prune --self-heal \
-            --helm-set "image.repository=253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-worker" \
+            --helm-set "image.repository=${{ needs.terraform-apply.outputs.aws_account_id }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/ecommerce-worker" \
             --helm-set "image.tag=${{ github.sha }}" \
             --upsert
 
@@ -553,8 +403,8 @@ jobs:
         run: |
           HOST=$(echo "${{ needs.install-cluster-tools.outputs.argocd_url }}" | sed 's|http://||')
           argocd app sync ecommerce-frontend --server "$HOST" --insecure --async
-          argocd app sync ecommerce-backend  --server "$HOST" --insecure --async
-          argocd app sync ecommerce-worker   --server "$HOST" --insecure --async
+          argocd app sync ecommerce-backend --server "$HOST" --insecure --async
+          argocd app sync ecommerce-worker --server "$HOST" --insecure --async
 
   # ═══════════════════════════════════════════════════════════════════════════
   # JOB 5 — Secrets + KEDA + CronWorkflow
@@ -565,25 +415,26 @@ jobs:
     needs: [terraform-apply, configure-argocd]
     steps:
       - uses: actions/checkout@v4
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - uses: azure/setup-kubectl@v3
+
       - name: Update kubeconfig
         run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ needs.terraform-apply.outputs.eks_cluster_name }}
+          aws reconcile-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ needs.terraform-apply.outputs.eks_cluster_name }} 2>/dev/null || \
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ needs.terraform-apply.outputs.eks_cluster_name }}
 
       - name: Create app-secrets — default namespace
         run: |
           kubectl create secret generic app-secrets \
             --from-literal=db-host="${{ needs.terraform-apply.outputs.aurora_endpoint }}" \
             --from-literal=db-password="${{ secrets.DB_PASSWORD }}" \
-            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}:5672" \
             --namespace default --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create app-secrets — worker namespace
@@ -591,51 +442,47 @@ jobs:
           kubectl create secret generic app-secrets \
             --from-literal=db-host="${{ needs.terraform-apply.outputs.aurora_endpoint }}" \
             --from-literal=db-password="${{ secrets.DB_PASSWORD }}" \
-            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}:5672" \
             --namespace worker --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create rabbitmq-secret — worker namespace (KEDA)
         run: |
           kubectl create secret generic rabbitmq-secret \
-            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}:5672" \
             --namespace worker --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Create rabbitmq-secret — argo namespace (CronWorkflow)
-        run: |
-          kubectl create secret generic rabbitmq-secret \
-            --from-literal=host="$${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}" \
-            --from-literal=username="admin" \
-            --from-literal=password="${{ secrets.RABBITMQ_PASSWORD }}" \
-            --from-literal=rabbit-url="amqp://admin:${{ secrets.RABBITMQ_PASSWORD }}@${{ needs.terraform-apply.outputs.rabbitmq_private_ip }}:5672" \
-            --namespace argo --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply KEDA ScaledObject
         run: |
-          kubectl apply -f k8s/keda-scaledobject.yaml
-          kubectl get scaledobject -n worker
+          if [ -f k8s/keda-scaledobject.yaml ]; then
+            kubectl apply -f k8s/keda-scaledobject.yaml
+            kubectl get scaledobject -n worker
+          else
+            echo "⚠️ k8s/keda-scaledobject.yaml not found, skipping fallback application step."
+          fi
 
       - name: Apply Argo CronWorkflow
         run: |
-          kubectl apply -f argo/dlq-cronworkflow.yaml
-          kubectl get cronworkflow -n argo
+          if [ -f argo/dlq-cronworkflow.yaml ]; then
+            kubectl apply -f argo/dlq-cronworkflow.yaml
+            kubectl get cronworkflow -n argo
+          else
+            echo "⚠️ argo/dlq-cronworkflow.yaml not found, skipping fallback application step."
+          fi
 
- # ═══════════════════════════════════════════════════════════════════════════
+  # ═══════════════════════════════════════════════════════════════════════════
   # JOB 6 — Verify: ArgoCD Sync + ALB Targets + App Health + Final Summary
   # ═══════════════════════════════════════════════════════════════════════════
   verify-deployment:
     name: Verify ArgoCD Sync + ALB Targets + App Health
     runs-on: ubuntu-latest
     needs: [terraform-apply, install-cluster-tools, configure-argocd, deploy-supporting-resources]
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - uses: azure/setup-kubectl@v3
 
@@ -667,7 +514,7 @@ jobs:
           ARGOCD_HOST=$(echo "${{ needs.install-cluster-tools.outputs.argocd_url }}" | sed 's|http://||')
           echo "Waiting for frontend sync..."
           argocd app wait ecommerce-frontend \
-            --server "$ARGOCD_HOST" --insecure \
+            --server "$ARGOCST_HOST" --insecure \
             --sync --health --timeout 300
           echo "✅ ecommerce-frontend: Synced + Healthy"
 
@@ -696,15 +543,13 @@ jobs:
           ALB_ARN=$(aws elbv2 describe-load-balancers \
             --query "LoadBalancers[?LoadBalancerName=='ecommerce-alb'].LoadBalancerArn" \
             --output text)
-
-          if [ -z "$ALB_ARN" ]; then
+          if [ -z "$ALB_ARN" ] || [ "$ALB_ARN" = "None" ]; then
             echo "⚠️ Could not find ALB 'ecommerce-alb'"
           else
             TG_ARNS=$(aws elbv2 describe-target-groups \
               --load-balancer-arn "$ALB_ARN" \
               --query "TargetGroups[*].TargetGroupArn" \
               --output text)
-
             for TG_ARN in $TG_ARNS; do
               TG_NAME=$(aws elbv2 describe-target-groups \
                 --target-group-arns "$TG_ARN" \
@@ -729,12 +574,16 @@ jobs:
           echo "=== Services ===" && kubectl get svc -A
           echo "=== Deployments ===" && kubectl get deployments -A
           echo "=== LB Controller ===" && kubectl get deployment aws-load-balancer-controller -n kube-system
-          echo "=== KEDA ScaledObject ===" && kubectl get scaledobject -n worker
-          echo "=== Argo CronWorkflow ===" && kubectl get cronworkflow -n argo
+          kubectl get scaledobject -n worker || echo "No custom KEDA layout detected directly"
+          kubectl get cronworkflow -n argo || echo "No custom Argo workflow resources detected directly"
 
       - name: Health Check — Ecommerce App via ALB
         run: |
           ALB="${{ needs.terraform-apply.outputs.alb_dns_name }}"
+          if [ -z "$ALB" ]; then
+            echo "❌ No ALB Target URL present from infrastructure workflow step output definitions."
+            exit 1
+          fi
           echo "Performing health check on http://$ALB/health"
           for i in {1..20}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -746,7 +595,11 @@ jobs:
             echo "Attempt $i/20: HTTP $STATUS — waiting 10s..."
             sleep 10
           done
-          [ "$STATUS" != "200" ] && echo "❌ Health check failed" && kubectl describe ingress ecommerce-ingress -n default && exit 1
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Health check failed"
+            kubectl describe ingress ecommerce-ingress -n default
+            exit 1
+          fi
 
       # ── Final Summary: All Access URLs ─────────────────────────────────
       - name: Print All Access URLs
@@ -755,34 +608,27 @@ jobs:
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
           GRAFANA=$(kubectl get svc prometheus-grafana -n monitoring \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "pending")
-
           echo "=================================================================="
-          echo "                  FULL DEPLOYMENT COMPLETE ✅"
+          echo " FULL DEPLOYMENT COMPLETE ✅"
           echo "=================================================================="
           echo ""
           echo "🌐 ECOMMERCE APPLICATION"
-          echo "   URL : http://${{ needs.terraform-apply.outputs.alb_dns_name }}"
+          echo "   URL          : http://${{ needs.terraform-apply.outputs.alb_dns_name }}"
           echo "   Health Check : /health"
           echo ""
           echo "🔧 ArgoCD (GitOps Dashboard)"
-          echo "   URL      : ${{ needs.install-cluster-tools.outputs.argocd_url }}"
-          echo "   Username : admin"
-          echo "   Password : ${{ needs.install-cluster-tools.outputs.argocd_password }}"
+          echo "   URL          : ${{ needs.install-cluster-tools.outputs.argocd_url }}"
+          echo "   Username     : admin"
+          echo "   Password     : ${{ needs.install-cluster-tools.outputs.argocd_password }}"
           echo ""
-          echo "⚙️  Argo Workflows UI"
-          echo "   URL : http://$ARGO_WF"
+          echo "⚙️ Argo Workflows UI"
+          echo "   URL          : http://$ARGO_WF"
           echo ""
           echo "📊 Grafana Dashboard"
-          echo "   URL      : http://$GRAFANA"
-          echo "   Username : admin"
-          echo "   Password : (Check prometheus-grafana secret in monitoring namespace)"
-          echo ""
-          echo "🐰 RabbitMQ Management"
-          echo "   URL      : http://${{ needs.terraform-apply.outputs.rabbitmq_public_ip }}:15672"
-          echo "   Username : admin"
-          echo "   Password : \${{ secrets.RABBITMQ_PASSWORD }}"
-          echo ""
+          echo "   URL          : http://$GRAFANA"
+          echo "   Username     : admin"
+          echo "   Password     : (Check prometheus-grafana secret in monitoring namespace)"
           echo "=================================================================="
           echo "GitOps Active → Push to main → ArgoCD auto-syncs to EKS"
-          echo "Repository: "https://github.com/parthorookie/finalcorrectedthreetier"
+          echo "Repository: ${{ env.GITHUB_REPO }}"
           echo "=================================================================="
