@@ -6,7 +6,7 @@ metadata:
   labels:
     app: worker
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.worker.replicaCount }}
   selector:
     matchLabels:
       app: worker
@@ -17,36 +17,12 @@ spec:
     spec:
       containers:
         - name: worker
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          env:
-            - name: NODE_ENV
-              value: {{ .Values.env.NODE_ENV | quote }}
-            - name: MAX_RETRIES
-              value: {{ .Values.env.MAX_RETRIES | quote }}
-            - name: DB_NAME
-              value: {{ .Values.env.DB_NAME | quote }}
-            - name: DB_USER
-              value: {{ .Values.env.DB_USER | quote }}
-            - name: DB_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: app-secrets
-                  key: db-host
-            - name: DB_PASS
-              valueFrom:
-                secretKeyRef:
-                  name: app-secrets
-                  key: db-password
-            - name: RABBIT_URL
-              valueFrom:
-                secretKeyRef:
-                  name: app-secrets
-                  key: rabbit-url
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
           resources:
             requests:
-              cpu: 150m
-              memory: 256Mi
+              cpu: {{ .Values.worker.resources.requests.cpu }}
+              memory: {{ .Values.worker.resources.requests.memory }}
             limits:
-              cpu: 400m
-              memory: 512Mi
+              cpu: {{ .Values.worker.resources.limits.cpu }}
+              memory: {{ .Values.worker.resources.limits.memory }}
