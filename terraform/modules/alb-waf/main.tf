@@ -1,13 +1,17 @@
 resource "aws_security_group" "alb" {
-  name        = "${var.project_name}-alb-sg"
-  description = "ALB security group"
-  vpc_id      = var.vpc_id
+  # Use name_prefix instead of fixed 'name' to avoid duplicate name conflicts
+  name_prefix = "${var.project_name}-alb-sg-"
+  description = "Security group for Application Load Balancer"
 
+  vpc_id = var.vpc_id
+
+  # Allow HTTP/HTTPS from anywhere
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP"
   }
 
   ingress {
@@ -15,6 +19,7 @@ resource "aws_security_group" "alb" {
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTPS"
   }
 
   egress {
@@ -22,9 +27,19 @@ resource "aws_security_group" "alb" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
   }
 
-  tags = { Name = "${var.project_name}-alb-sg" }
+  tags = {
+    Name        = "${var.project_name}-alb-sg"
+    Environment = var.environment
+    Terraform   = "true"
+  }
+
+  # Critical: Allows Terraform to create new SG before destroying old one
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_lb" "main" {
@@ -39,6 +54,7 @@ resource "aws_lb" "main" {
   tags = {
     Name        = "${var.project_name}-alb"
     Environment = var.environment
+    Terraform   = "true"
   }
 }
 
@@ -55,6 +71,12 @@ resource "aws_lb_target_group" "backend" {
     unhealthy_threshold = 3
     interval            = 30
     timeout             = 5
+    matcher             = "200"
+  }
+
+  tags = {
+    Name        = "${var.project_name}-backend-tg"
+    Environment = var.environment
   }
 }
 
@@ -71,6 +93,12 @@ resource "aws_lb_target_group" "frontend" {
     unhealthy_threshold = 3
     interval            = 30
     timeout             = 5
+    matcher             = "200"
+  }
+
+  tags = {
+    Name        = "${var.project_name}-frontend-tg"
+    Environment = var.environment
   }
 }
 
@@ -101,10 +129,10 @@ resource "aws_lb_listener_rule" "api" {
   }
 }
 
-# WAF v2 Web ACL with XSS 
+# WAFv2 Web ACL
 resource "aws_wafv2_web_acl" "main" {
   name        = "${var.environment}-waf"
-  description = "WAF for ALB"
+  description = "WAF for ALB - Block common web exploits"
   scope       = "REGIONAL"
 
   default_action {
@@ -116,7 +144,7 @@ resource "aws_wafv2_web_acl" "main" {
     metric_name                = "${var.environment}-waf"
     sampled_requests_enabled   = true
   }
-   //Applied the WAF XSS rule in the terraform code itself //  
+
   rule {
     name     = "BlockXSS"
     priority = 1
@@ -145,7 +173,6 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 }
-
 
 resource "aws_wafv2_web_acl_association" "alb" {
   resource_arn = aws_lb.main.arn

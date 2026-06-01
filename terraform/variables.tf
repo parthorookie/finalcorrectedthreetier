@@ -1,6 +1,7 @@
 ################################
 # GLOBAL
 ################################
+
 variable "region" {
   description = "AWS region"
   type        = string
@@ -22,6 +23,7 @@ variable "environment" {
 ################################
 # DATABASE
 ################################
+
 variable "db_password" {
   description = "Aurora PostgreSQL master password"
   type        = string
@@ -31,6 +33,7 @@ variable "db_password" {
 ################################
 # NETWORKING (VPC)
 ################################
+
 variable "vpc_cidr" {
   description = "VPC CIDR block"
   type        = string
@@ -50,61 +53,21 @@ variable "private_subnet_cidrs" {
 }
 
 variable "availability_zones" {
-  description = "Availability zones"
+  description = "Availability Zones"
   type        = list(string)
   default     = ["ap-south-1a", "ap-south-1b"]
 }
 
 ################################
-# EKS CONFIG
+# FARGATE
 ################################
-variable "eks_node_instance_types" {
-  description = "EKS node instance types"
+
+variable "fargate_namespaces" {
+  description = "Namespaces scheduled onto Fargate"
   type        = list(string)
-  default     = ["t3.medium"]
-}
 
-variable "eks_desired_size" {
-  description = "Desired node count"
-  type        = number
-  default     = 2
+  default = [
+    "default",
+    "kube-system"
+  ]
 }
-
-variable "eks_min_size" {
-  description = "Minimum node count"
-  type        = number
-  default     = 1
-}
-
-variable "eks_max_size" {
-  description = "Maximum node count"
-  type        = number
-  default     = 5
-}
-
-################################
-# RABBITMQ (EC2)
-################################
-variable "rabbitmq_instance_type" {
-  description = "Instance type for RabbitMQ EC2"
-  type        = string
-  default     = "t3.medium"
-}
-
-variable "rabbitmq_ami" {
-  description = "Amazon Linux 2023 AMI for ap-south-1"
-  type        = string
-  default     = "ami-0f58b397bc5c1f2e8"
-}
-
-variable "rabbitmq_password" {
-  description = "RabbitMQ admin password"
-  type        = string
-  sensitive   = true
-}
-
-variable "operator_ip_cidr" {
-  description = "Your public IP for RabbitMQ UI access (e.g. x.x.x.x/32)"
-  type        = string
-}
-

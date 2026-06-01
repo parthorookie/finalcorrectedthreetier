@@ -2,10 +2,6 @@ output "eks_cluster_name" {
   value = module.eks.cluster_name
 }
 
-output "rabbitmq_private_ip" {
-  value = module.rabbitmq_ec2.private_ip
-}
-
 output "aurora_endpoint" {
   value = module.aurora.cluster_endpoint
 }
