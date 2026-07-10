@@ -28,3 +28,4 @@ fargate_namespaces = [
    "kube-system"
  ]
 
+operator_ip_cidr = "YOUR_PUBLIC_IP/32"   # Example: "103.123.45.67/32"

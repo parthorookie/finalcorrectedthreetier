@@ -71,3 +71,9 @@ variable "fargate_namespaces" {
     "kube-system"
   ]
 }
+
+variable "operator_ip_cidr" {
+  description = "CIDR block for operator/admin access (your public IP)"
+  type        = string
+  default     = "0.0.0.0/0"   # Change this in production!
+}
