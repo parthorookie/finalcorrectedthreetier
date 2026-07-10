@@ -30,7 +30,7 @@ module "aurora" {
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   db_password        = var.db_password
-  eks_sg_id          = module.eks.node_security_group_id
+  eks_sg_id          = module.eks.cluster_security_group_id   # Fixed
 }
 
 
@@ -40,7 +40,7 @@ module "alb_waf" {
   environment       = var.environment
   vpc_id            = module.vpc.vpc_id
   public_subnet_ids = module.vpc.public_subnet_ids
-  eks_sg_id         = module.eks.node_security_group_id
+  eks_sg_id         = module.eks.cluster_security_group_id    # Fixed
 }
 
 

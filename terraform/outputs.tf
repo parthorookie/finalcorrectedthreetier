@@ -1,5 +1,5 @@
 output "eks_cluster_name" {
-  value = module.eks.cluster_name
+  value = module.eks.eks_cluster_name     # Fixed
 }
 
 output "aurora_endpoint" {
