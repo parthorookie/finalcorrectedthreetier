@@ -1,0 +1,68 @@
+name: Destroy - Terraform Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Type DESTROY to confirm infrastructure deletion"
+        required: true
+        type: string
+
+env:
+  AWS_REGION: ap-south-1
+  TF_DIR: terraform
+
+jobs:
+  terraform-destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+
+    if: github.event.inputs.confirmation == 'DESTROY'
+
+    environment:
+      name: destroy-production
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.0"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init -reconfigure
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform validate
+
+      - name: Terraform Destroy
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          OPERATOR_IP_CIDR: ${{ secrets.OPERATOR_IP_CIDR }}
+        run: |
+          terraform destroy \
+            -auto-approve \
+            -var="region=${{ env.AWS_REGION }}" \
+            -var="db_password=${DB_PASSWORD}" \
+            -var="project_name=ecommerce" \
+            -var="environment=prod" \
+            -var="operator_ip_cidr=${OPERATOR_IP_CIDR}"
+
+      - name: Destroy Completed
+        run: |
+          echo "=========================================="
+          echo "Terraform destroy completed successfully."
+          echo "All Terraform-managed infrastructure has been removed."
+          echo "=========================================="
