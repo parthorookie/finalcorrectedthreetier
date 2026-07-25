@@ -12,7 +12,7 @@ on:
         required: true
         default: "apply"
         type: choice
-        options: [plan, apply, destroy]
+        options: [plan, apply,validate, destroy]
 
 env:
   AWS_REGION: ap-south-1
