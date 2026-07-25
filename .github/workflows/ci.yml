@@ -115,16 +115,17 @@ jobs:
         with:
           java-version: "21"
           distribution: "temurin"
-          cache: false
 
-      # Force the scanner to use the Java we just installed
+      - name: Verify Java version   # optional but useful
+        run: |
+          echo "JAVA_HOME = $JAVA_HOME"
+          java -version
+
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v5   # use latest major version
+        uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          # Critical: point the scanner to Java 21
-          JAVA_HOME: ${{ env.JAVA_HOME }}
         with:
           args: >
             -Dsonar.organization=parthorookie
