@@ -1,13 +1,8 @@
 frontend:
   replicaCount: 2
   image:
-<<<<<<< HEAD
     repository: 253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-frontend
     tag: "408d23d"
-=======
-    repository: "253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-frontend"
-    tag: "latest"
->>>>>>> 5d8560e (placed registry images in ecommerce amd worker values.yaml)
     pullPolicy: IfNotPresent
 
   resources:
@@ -21,13 +16,8 @@ frontend:
 backend:
   replicaCount: 2
   image:
-<<<<<<< HEAD
     repository: 253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-backend
     tag: "408d23d"
-=======
-    repository: "253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-backend"
-    tag: "latest"
->>>>>>> 5d8560e (placed registry images in ecommerce amd worker values.yaml)
     pullPolicy: IfNotPresent
 
   resources:
@@ -45,13 +35,8 @@ backend:
 worker:
   replicaCount: 1
   image:
-<<<<<<< HEAD
     repository: 253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-worker
     tag: "408d23d"
-=======
-    repository: "253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-worker"
-    tag: "latest"
->>>>>>> 5d8560e (placed registry images in ecommerce amd worker values.yaml)
     pullPolicy: IfNotPresent
 
   resources:
