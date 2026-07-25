@@ -22,10 +22,10 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
-  # JOB 1 — Terraform Plan
+  # JOB 1 — Terraform Plan + Validate
   # ═══════════════════════════════════════════════════════════════════════════
   terraform-plan:
-    name: Terraform Plan
+    name: Terraform Plan + Validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,13 +42,20 @@ jobs:
         with:
           terraform_version: "1.10.0"
 
-      - name: Terraform Init & Plan
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init -reconfigure
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform validate
+
+      - name: Terraform Plan
         working-directory: ${{ env.TF_DIR }}
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           OPERATOR_IP: ${{ secrets.OPERATOR_IP_CIDR }}
         run: |
-          terraform init -reconfigure
           terraform plan \
             -var="region=${{ env.AWS_REGION }}" \
             -var="db_password=${DB_PASSWORD}" \
@@ -514,7 +521,7 @@ jobs:
           ARGOCD_HOST=$(echo "${{ needs.install-cluster-tools.outputs.argocd_url }}" | sed 's|http://||')
           echo "Waiting for frontend sync..."
           argocd app wait ecommerce-frontend \
-            --server "$ARGOCST_HOST" --insecure \
+            --server "$ARGOCD_HOST" --insecure \
             --sync --health --timeout 300
           echo "✅ ecommerce-frontend: Synced + Healthy"
 
