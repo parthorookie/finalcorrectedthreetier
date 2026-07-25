@@ -2,7 +2,7 @@ frontend:
   replicaCount: 2
   image:
     repository: 253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-frontend
-    tag: "latest"
+    tag: "408d23d"
     pullPolicy: IfNotPresent
 
   resources:
@@ -17,7 +17,7 @@ backend:
   replicaCount: 2
   image:
     repository: 253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-backend
-    tag: "latest"
+    tag: "408d23d"
     pullPolicy: IfNotPresent
 
   resources:
@@ -36,7 +36,7 @@ worker:
   replicaCount: 1
   image:
     repository: 253490759114.dkr.ecr.ap-south-1.amazonaws.com/ecommerce-worker
-    tag: "latest"
+    tag: "408d23d"
     pullPolicy: IfNotPresent
 
   resources:
